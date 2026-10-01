@@ -1,68 +1,77 @@
 # NetPulse
 
-> 一条命令，给你的服务器做一次全面体检。
->
-> [English](README.md) · 中文
+> **为 AI agent 而生的 VPS 巡检工具**：本地一条命令，批量体检所有机器，结果直接喂给 agent。
+
+[English](README.md) · [中文](README_zh.md)
 
 ![demo](asset/demo.svg)
 
-## 它能查什么
+## 核武器：agent 友好 + 批量巡检
 
-| 检查项 | 说明 |
-|---|---|
-| 🌐 IP 信息 | IP、地理位置、ASN、运营商 |
-| 🧼 IP 纯净度 | 机房 / 家宽 / 代理特征，并用一句话告诉你这意味着什么 |
-| 🎬 流媒体 / AI 解锁 | Netflix、Disney+、YouTube Premium、TikTok、ChatGPT、Gemini（状态码初步判断） |
-| 🚀 速度测试 | 多节点下载测速 |
-| 📋 一键报告 | `--share` 生成 Markdown 报告，方便发群里问"这机器怎么样" |
+别的体检脚本要你一台台 SSH 上去跑。NetPulse 反过来——**你在本地发起，它去机器上执行，结果拿回本地**：
 
-## 安装
+- **本地发起**：`--host user@host` 经 SSH 把脚本送到远端执行，远端缺依赖自动装，你什么都不用管
+- **批量巡检**：`--host` 可重复指定，一次体检整个 fleet，自动输出多机对比表
+- **JSON 输出**：`--json` 机器可读，直接管道进 `jq` 或喂给 AI agent
+- **非交互**：无确认、无彩色（JSON 模式），失败给清晰错误 + 非零退出码，agent 不会卡住
 
-**一键运行（推荐）：**
+```bash
+# 巡检三台机器，JSON 直接给 agent 分析
+python3 netpulse.py --host root@vps-a --host root@vps-b --host root@vps-c --json | jq .
+```
+
+## 一键运行
+
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)
 ```
 
-**手动运行：**
-```bash
-git clone https://github.com/Genuifx/NetPulse.git
-cd NetPulse
-pip install -r requirements.txt
-python3 netpulse.py          # 体检
-python3 netpulse.py --share  # 体检 + 生成可分享的报告
-```
-
-## Agent 友好
-
-专为 AI agent / 自动化脚本设计：
-
-- `--json`：输出机器可读的 JSON，无彩色、无交互，直接管道给 `jq` 解析
-- `--host user@host`：本地发起，经 SSH 在远端执行并取回结果（远端缺 `requests` 会自动安装）
-- 非交互运行，失败时返回非零退出码并输出清晰错误
+或手动：
 
 ```bash
-# 本地发起，检测远端 VPS，结果以 JSON 输出
-python3 netpulse.py --host root@1.2.3.4 --json | jq '{purity: .purity, unlock: .unlock}'
-
-# agent 批量巡检多台机器
-for h in root@a root@b; do python3 netpulse.py --host $h --json; done | jq -s .
+git clone https://github.com/Genuifx/NetPulse.git && cd NetPulse
+python3 netpulse.py
 ```
 
-## 常见问题
+只依赖 `requests`（缺失时自动安装）。
 
-**Q: 一定要下载到 VPS 上才能测吗？**
-A: 不一定。NetPulse 测的是**目标机器**的网络出口，有两种用法：在 VPS 上直接跑，或者本地用 `--host user@host` 发起（经 SSH 在远端执行，结果拿回本地）。想测某个代理节点，就在本地终端挂上该节点后再跑。
+## 检测项
 
-**Q: 解锁检测准吗？**
-A: 基于 HTTP 状态码的初步判断。Netflix 等建议用专项脚本二次确认。
+| 类别 | 内容 |
+|---|---|
+| IP 信息 | 出口 IP、位置、ASN、运营商 |
+| IP 纯净度 | 机房 IP / 家宽 IP / 代理特征 |
+| DNS 泄露 | 解析出口属地 vs IP 属地 |
+| 解锁检测 | Netflix、Disney+、YouTube Premium、HBO Max、Hulu、Prime Video、TikTok、Spotify、ChatGPT、Claude、Gemini（11 项） |
+| 网络质量 | IPv6 出口、到 Cloudflare/Google/百度的 TCP 延迟、下载测速 |
 
-**Q: 需要 root 吗？**
-A: 不需要。纯 Python，只依赖 `requests`。
+另有 `--share` 生成 Markdown 报告，方便发群里 / 贴工单。
+
+## 给 agent 用的标准姿势
+
+```bash
+# 快速判断：IP 纯净度 + 解锁数
+python3 netpulse.py --host root@1.2.3.4 --json \
+  | jq '{purity: .purity, unlock: [.unlock[] | select(. == 200)] | length}'
+
+# 批量巡检整个 fleet
+python3 netpulse.py --host root@a --host root@b --host root@c --json \
+  | jq '.[] | {host, purity, ipv6}'
+```
+
+JSON 字段：`tool` / `version` / `timestamp` / `host` / `ip` / `purity` / `dns` / `unlock` / `ipv6` / `latency` / `speed` / `summary`，失败时为 `error` 字段 + 非零退出码。
+
+## FAQ
+
+**解锁检测准吗？**
+状态码只是初步判断（200 ≈ 可访问，403/451 ≈ 疑似区域限制）。Netflix 等建议用专项脚本二次确认，我们的定位是快速初筛。
+
+**`--host` 需要什么条件？**
+本地有 `ssh` 命令，远端有 `python3`，且配置了 SSH key 免密登录（`BatchMode=yes`，不支持交互输密码）。
+
+**支持跳板机 / 特殊端口吗？**
+`--host` 就是普通 SSH，走你自己的 `~/.ssh/config` 即可。
 
 ## 免责声明
 
-仅用于检测你拥有或有权检测的服务器 / 网络。作者不对检测结果的使用承担责任。
-
-## License
-
-MIT — 欢迎 fork 二创，保留原作者链接即可。
+本工具仅检测**你自己的服务器**的网络状况，不做任何针对他人的扫描或追踪。请勿用于未授权的机器。

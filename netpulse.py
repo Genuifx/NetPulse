@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NetPulse v0.2.0 — 一键服务器网络体检（agent 友好）
+NetPulse v0.3.0 — 为 AI agent 而生的 VPS 巡检工具
 用法:
-  python3 netpulse.py                     本机体检（彩色终端输出）
-  python3 netpulse.py --json              本机体检（JSON 输出，方便 agent/脚本解析）
-  python3 netpulse.py --host root@1.2.3.4
-      本地发起：经 SSH 在远端执行，结果取回本地展示
-  python3 netpulse.py --host root@1.2.3.4 --json
-      agent 标准用法：本地发起 + JSON 输出
-  python3 netpulse.py --share             另存 Markdown 报告
+  python3 netpulse.py                                  本机体检
+  python3 netpulse.py --host root@a --host root@b      本地发起：批量巡检多台机器
+  python3 netpulse.py --host root@a --json | jq .       agent 标准用法
+  python3 netpulse.py --share                          另存 Markdown 报告
 只依赖 requests（缺失时自动尝试安装，远端无需手动干预）。
 """
 
@@ -17,11 +14,13 @@ import argparse
 import concurrent.futures as futures
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
 import time
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # ---------- 依赖自举（agent 友好：远端无需手动装依赖） ----------
 try:
@@ -52,28 +51,40 @@ def p(text, color=""):
     return f"{color}{text}{C.RST}"
 
 
-def ok(t): return p("✅ " + t, C.GREEN)
-def warn(t): return p("⚠️ " + t, C.YELLOW)
-def bad(t): return p("❌ " + t, C.RED)
-def info(t): return p("ℹ️ " + t, C.CYAN)
+def ok(t): return p("✓ " + t, C.GREEN)
+def warn(t): return p("! " + t, C.YELLOW)
+def bad(t): return p("✗ " + t, C.RED)
+def info(t): return p("→ " + t, C.CYAN)
+
+
+def dw(s):
+    """显示宽度（CJK/符号按 2 宽计），用于表格对齐。"""
+    w = 0
+    for ch in str(s):
+        w += 2 if ('\u4e00' <= ch <= '\u9fff' or '\u3000' <= ch <= '\u303f'
+                   or '\uff00' <= ch <= '\uffef' or ord(ch) > 0x2500) else 1
+    return w
+
+
+def pad(s, width):
+    s = str(s)
+    return s + " " * max(0, width - dw(s))
 
 
 def banner():
-    print(p(r"""
-  _   _      _   ____        _          
- | \ | | ___| |_|  _ \ _   _| |___  ___ 
- |  \| |/ _ \ __| |_) | | | | / __|/ _ \
- | |\  |  __/ |_|  __/| |_| | \__ \  __/
- |_| \_|\___|\__|_|    \__,_|_|___/\___|
-    """, C.CYAN))
-    print(p(f"  NetPulse v{VERSION} · 一键服务器网络体检", C.DIM))
-    print(p("  只检测目标机器的网络出口，不收集、不上传任何数据", C.DIM))
     print()
+    print(p("  NetPulse", C.BOLD + C.CYAN) + p(f"  v{VERSION}", C.DIM))
+    print(p("  为 AI agent 而生的 VPS 巡检工具", C.DIM))
+    print(p("  " + "─" * 44, C.DIM))
 
 
 def section(title):
     print()
-    print(p(f"━━ {title} ━━━━━━━━━━━━━━━━━━━━━━", C.BOLD + C.BLUE))
+    print(p(f"  ━━ {title} ", C.BOLD + C.BLUE) + p("━" * 30, C.DIM))
+
+
+def kv(label, value, color=C.BOLD):
+    print(f"    {p(pad(label, 10), C.DIM)}{p(str(value), color)}")
 
 
 # ================= 数据采集（静默，只返回数据） =================
@@ -100,12 +111,29 @@ def purity_verdict(d):
     return "未知"
 
 
+def check_dns_leak(ip_country):
+    """DNS 泄露检测：解析出口的属地是否与 IP 属地一致。"""
+    try:
+        d = requests.get("http://edns.ip-api.com/json", timeout=10).json()
+        dns = d.get("dns", {})
+        rip, rgeo = dns.get("ip"), dns.get("geo", "")
+    except Exception:
+        return {"ok": False}
+    leak = bool(ip_country and rgeo and not rgeo.startswith(ip_country))
+    return {"ok": True, "resolver_ip": rip, "resolver_geo": rgeo, "leak": leak}
+
+
 TARGETS = [
     ("Netflix", "https://www.netflix.com/title/80018499"),
     ("Disney+", "https://www.disneyplus.com/"),
     ("YouTube Premium", "https://www.youtube.com/premium"),
+    ("HBO Max", "https://www.max.com/"),
+    ("Hulu", "https://www.hulu.com/"),
+    ("Prime Video", "https://www.primevideo.com/"),
     ("TikTok", "https://www.tiktok.com/"),
+    ("Spotify", "https://open.spotify.com/"),
     ("ChatGPT", "https://chatgpt.com/"),
+    ("Claude", "https://claude.ai/"),
     ("Gemini", "https://gemini.google.com/"),
 ]
 
@@ -121,9 +149,43 @@ def probe(name_url):
 
 def check_unlock_all():
     results = {}
-    with futures.ThreadPoolExecutor(max_workers=6) as ex:
+    with futures.ThreadPoolExecutor(max_workers=8) as ex:
         for name, code in ex.map(probe, TARGETS):
             results[name] = code
+    return results
+
+
+def check_ipv6():
+    try:
+        ip = requests.get("https://api64.ipify.org?format=json", timeout=10).json().get("ip", "")
+        return ip if ":" in ip else None
+    except Exception:
+        return None
+
+
+LAT_TARGETS = [
+    ("Cloudflare", "1.1.1.1", 443),
+    ("Google", "8.8.8.8", 443),
+    ("百度", "www.baidu.com", 443),
+]
+
+
+def tcp_ping(t):
+    label, host, port = t
+    t0 = time.time()
+    try:
+        s = socket.create_connection((host, port), timeout=5)
+        s.close()
+        return (label, round((time.time() - t0) * 1000))
+    except Exception:
+        return (label, None)
+
+
+def check_latency_all():
+    results = {}
+    with futures.ThreadPoolExecutor(max_workers=3) as ex:
+        for label, ms in ex.map(tcp_ping, LAT_TARGETS):
+            results[label] = ms
     return results
 
 
@@ -161,17 +223,22 @@ def check_speed_all():
 
 def build_summary(data):
     tips = []
-    purity, unlock = data["purity"], data["unlock"]
+    purity = data["purity"]
     if "代理" in purity:
-        tips.append("检测到代理特征：当前走的是代理/VPN 出口，以上结果反映的是出口节点的情况。")
+        tips.append("检测到代理特征：当前走的是代理/VPN 出口，结果反映的是出口节点的情况。")
     elif "机房" in purity:
         tips.append("机房 IP：适合建站/做节点；注册风控严的平台账号时多加小心。")
     elif "家宽" in purity:
         tips.append("IP 比较干净：适合账号类、出海业务。")
-    unlocked = sum(1 for v in unlock.values() if v == 200)
-    if unlocked >= 4:
+    dns = data.get("dns") or {}
+    if dns.get("ok") and dns.get("leak"):
+        tips.append(f"DNS 有泄露：解析出口属地（{dns.get('resolver_geo')}）与 IP 属地不一致。")
+    if not data.get("ipv6"):
+        tips.append("无 IPv6 出口，部分场景（如 App Store 审核、IPv6-only 网络）会受限。")
+    unlocked = sum(1 for v in data["unlock"].values() if v == 200)
+    if unlocked >= 7:
         tips.append("流媒体/AI 解锁良好，拿来看剧或跑 AI 没压力。")
-    elif unlocked <= 1:
+    elif unlocked <= 2:
         tips.append("多数服务不可访问，检查下出口是否被墙，或换个干净 IP。")
     return tips
 
@@ -179,7 +246,7 @@ def build_summary(data):
 def collect(progress=False):
     def step(msg, fn):
         if progress:
-            print(p(f"▸ {msg}…", C.DIM), flush=True)
+            print(p(f"  ▸ {msg}…", C.DIM), flush=True)
         return fn()
 
     data = {
@@ -190,7 +257,11 @@ def collect(progress=False):
     }
     data["ip"] = step("正在查询 IP 信息", fetch_ip_info)
     data["purity"] = purity_verdict(data["ip"])
+    country = (data["ip"] or {}).get("country")
+    data["dns"] = step("正在检测 DNS 泄露", lambda: check_dns_leak(country))
     data["unlock"] = step("正在检测流媒体/AI 解锁", check_unlock_all)
+    data["ipv6"] = step("正在检测 IPv6", check_ipv6)
+    data["latency"] = step("正在测试延迟", check_latency_all)
     data["speed"] = step("正在测速", check_speed_all)
     data["summary"] = build_summary(data)
     return data
@@ -199,114 +270,179 @@ def collect(progress=False):
 # ================= 远端执行（本地发起） =================
 
 def run_remote(host):
-    """经 SSH 把本脚本喂给远端 python3 执行，取回 JSON。"""
-    here = os.path.realpath(__file__)
+    """经 SSH 把本脚本喂给远端 python3 执行，取回 JSON。失败时返回带 error 的 dict。"""
     try:
-        with open(here, "rb") as f:
+        with open(os.path.realpath(__file__), "rb") as f:
             script = f.read()
     except OSError as e:
-        sys.exit(f"无法读取本脚本：{e}")
+        return {"tool": "netpulse", "version": VERSION, "host": host,
+                "error": f"无法读取本脚本：{e}"}
     cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
            "-o", "StrictHostKeyChecking=accept-new",
            host, "python3 - --json --no-color"]
     try:
         pr = subprocess.run(cmd, input=script, capture_output=True, timeout=300)
     except FileNotFoundError:
-        sys.exit("未找到 ssh 命令，无法使用 --host")
+        return {"tool": "netpulse", "version": VERSION, "host": host,
+                "error": "未找到 ssh 命令，无法使用 --host"}
     except subprocess.TimeoutExpired:
-        sys.exit(f"SSH 执行超时：{host}")
+        return {"tool": "netpulse", "version": VERSION, "host": host,
+                "error": f"SSH 执行超时：{host}"}
     if pr.returncode != 0:
         err = pr.stderr.decode(errors="replace").strip().splitlines()
-        sys.exit(f"远端执行失败（{host}）：{err[-1] if err else 'exit ' + str(pr.returncode)}")
+        return {"tool": "netpulse", "version": VERSION, "host": host,
+                "error": f"远端执行失败：{err[-1] if err else 'exit ' + str(pr.returncode)}"}
     try:
         data = json.loads(pr.stdout.decode())
     except Exception:
-        sys.exit(f"远端返回的不是合法 JSON（{host}），可能是远端 python3 不可用")
+        return {"tool": "netpulse", "version": VERSION, "host": host,
+                "error": "远端返回的不是合法 JSON，可能是远端 python3 不可用"}
     data["host"] = host
     return data
 
 
 # ================= 输出渲染 =================
 
+def ms_color(ms):
+    if ms is None:
+        return C.DIM
+    return C.GREEN if ms < 150 else (C.YELLOW if ms < 300 else C.RED)
+
+
 def render_terminal(data):
     banner()
-    ip = data["ip"]
+    ip = data["ip"] or {}
 
-    section("1/4 · IP 信息")
-    if ip:
-        print(f"  IP      : {p(ip['query'], C.BOLD)}")
-        print(f"  位置    : {ip.get('country', '?')} {ip.get('city', '?')} ({ip.get('timezone', '?')})")
-        print(f"  ASN     : {ip.get('as', '?')}")
-        print(f"  运营商  : {ip.get('isp', '?')}")
-        print(f"  组织    : {ip.get('org', '?')}")
+    section(f"1/5 · IP 信息  [{data['host']}]")
+    if data["ip"]:
+        kv("IP", ip.get("query", "-"))
+        kv("位置", f"{ip.get('country', '?')} · {ip.get('city', '?')} ({ip.get('timezone', '?')})")
+        kv("ASN", ip.get("as", "?"))
+        kv("运营商", ip.get("isp", "?"))
     else:
-        print(bad("IP 查询失败"))
+        print("    " + bad("IP 查询失败"))
 
-    section("2/4 · IP 纯净度")
+    section("2/5 · IP 纯净度")
     label = data["purity"]
     fn = warn if ("机房" in label or "代理" in label) else (ok if "家宽" in label else info)
-    print("  " + fn(f"结论：{label}"))
-    print(p("  这是什么意思？机房 IP 适合建站/做节点，但部分平台（社交/电商/AI）风控更严；", C.DIM))
-    print(p("  家宽/原生 IP 更\"干净\"，适合账号类、出海业务。", C.DIM))
+    print("    " + fn(label))
+    print(p("    机房 IP 适合建站/做节点，但部分平台风控更严；家宽/原生 IP 更\"干净\"，适合账号类业务。", C.DIM))
 
-    section("3/4 · 流媒体 / AI 解锁检测（初步）")
+    section("3/5 · DNS 泄露检测")
+    dns = data.get("dns") or {}
+    if not dns.get("ok"):
+        print("    " + bad("检测失败"))
+    elif dns.get("leak"):
+        print("    " + warn(f"存在泄露：解析出口 {dns.get('resolver_ip')}（{dns.get('resolver_geo')}）"))
+    else:
+        print("    " + ok(f"无泄露：解析出口 {dns.get('resolver_ip')}（{dns.get('resolver_geo')}）"))
+
+    section(f"4/5 · 流媒体 / AI 解锁检测（{sum(1 for v in data['unlock'].values() if v == 200)}/{len(data['unlock'])}）")
     for name, code in data["unlock"].items():
         if code == 200:
-            print("  " + ok(f"{name}: 可访问（HTTP 200）"))
+            print("    " + ok(pad(name, 16) + "可访问"))
         elif code in (403, 451):
-            print("  " + warn(f"{name}: 疑似区域限制（HTTP {code}）"))
+            print("    " + warn(pad(name, 16) + f"疑似区域限制（{code}）"))
         elif code is None:
-            print("  " + bad(f"{name}: 检测失败（超时或网络错误）"))
+            print("    " + bad(pad(name, 16) + "检测失败"))
         else:
-            print("  " + bad(f"{name}: 不可访问（HTTP {code}）"))
-    print(p("  说明：状态码只是初步判断，Netflix 等建议用专项脚本二次确认。", C.DIM))
+            print("    " + bad(pad(name, 16) + f"不可访问（{code}）"))
+    print(p("    状态码为初步判断，Netflix 等建议用专项脚本二次确认。", C.DIM))
 
-    section("4/4 · 速度测试")
-    for name, mbps in data["speed"].items():
+    section("5/5 · 网络质量")
+    v6 = data.get("ipv6")
+    print("    " + (ok(f"IPv6 出口：{v6}") if v6 else info("IPv6 出口：无")))
+    lat = data.get("latency") or {}
+    for label, ms in lat.items():
+        print(f"    {p(pad('延迟 ' + label, 16), C.DIM)}{p(str(ms) + ' ms' if ms else '失败', ms_color(ms))}")
+    for name, mbps in (data.get("speed") or {}).items():
         if mbps:
-            print(f"  {p(name + ':', C.BOLD)} {mbps} Mbps 下载")
+            print(f"    {p(pad('下载 ' + name, 16), C.DIM)}{p(str(mbps) + ' Mbps', C.BOLD)}")
         else:
-            print("  " + bad(f"{name}: 测速失败"))
+            print("    " + bad(f"下载 {name}：测速失败"))
 
     section("体检总结")
-    unlocked = sum(1 for v in data["unlock"].values() if v == 200)
-    print("  " + p(f"• 目标：{data['host']}", C.BOLD))
-    print("  " + p(f"• IP 类型：{data['purity']}", C.BOLD))
-    print("  " + p(f"• 解锁情况：{unlocked}/{len(data['unlock'])} 个服务可访问", C.BOLD))
-    sp = [v for v in data["speed"].values() if v]
-    if sp:
-        print("  " + p(f"• 下载速度：约 {max(sp)} Mbps（取最优）", C.BOLD))
-    print()
     for t in data["summary"]:
-        print("  " + info(t))
+        print("    " + info(t))
+    print()
 
 
-def render_share_md(data):
-    ip = data["ip"]
-    L = [f"# NetPulse 体检报告（v{VERSION}）", "",
-         f"检测时间：{data['timestamp']}  ·  目标：{data['host']}", ""]
-    if ip:
-        L += ["## IP 信息",
-              f"- IP：{ip['query']}",
-              f"- 位置：{ip.get('country')} {ip.get('city')}",
-              f"- ASN：{ip.get('as')}",
-              f"- ISP：{ip.get('isp')}", ""]
-    L += ["## 纯净度", f"- {data['purity']}", "", "## 解锁检测", ""]
-    for name, code in data["unlock"].items():
-        mark = "✅" if code == 200 else ("⚠️" if code in (403, 451) else "❌")
-        L.append(f"- {mark} {name}（HTTP {code if code else '检测失败'}）")
-    L += ["", "## 速度", ""]
-    for name, mbps in data["speed"].items():
-        L.append(f"- {name}：{str(mbps) + ' Mbps' if mbps else '测速失败'}")
-    L += ["", "_由 NetPulse 生成 · 状态码为初步判断_"]
+def short_purity(label):
+    if "机房" in label:
+        return "机房IP"
+    if "家宽" in label:
+        return "家宽IP"
+    if "代理" in label:
+        return "代理"
+    return "未知"
+
+
+def render_compare(datas):
+    datas = [d for d in datas if not d.get("error")]
+    if len(datas) < 2:
+        return
+    section(f"多机对比（{len(datas)} 台）")
+    cols = ["主机", "出口 IP", "纯净度", "解锁", "延迟", "下载"]
+    rows = []
+    for d in datas:
+        unl = sum(1 for v in d["unlock"].values() if v == 200)
+        lats = [v for v in (d.get("latency") or {}).values() if v]
+        spds = [v for v in (d.get("speed") or {}).values() if v]
+        rows.append([
+            d["host"],
+            (d.get("ip") or {}).get("query", "-"),
+            short_purity(d["purity"]),
+            f"{unl}/{len(d['unlock'])}",
+            f"{min(lats)}ms" if lats else "-",
+            f"{max(spds)}Mbps" if spds else "-",
+        ])
+    widths = [max(dw(r[i]) for r in [cols] + rows) for i in range(len(cols))]
+    print("    " + "  ".join(p(pad(c, widths[i]), C.DIM) for i, c in enumerate(cols)))
+    print("    " + p("  ".join("─" * widths[i] for i in range(len(cols))), C.DIM))
+    for r in rows:
+        print("    " + "  ".join(pad(c, widths[i]) for i, c in enumerate(r)))
+    print()
+
+
+def render_share_md(datas):
+    if len(datas) == 1:
+        d = datas[0]
+        title = f"# NetPulse 体检报告（v{VERSION}）"
+    else:
+        title = f"# NetPulse 批量巡检报告（v{VERSION}）"
+    L = [title, ""]
+    for d in datas:
+        if d.get("error"):
+            L += [f"## {d['host']}", f"- ✗ {d['error']}", ""]
+            continue
+        ip = d.get("ip") or {}
+        L += [f"## {d['host']}（{d.get('timestamp', '')}）",
+              f"- 出口 IP：{ip.get('query', '-')}（{ip.get('country', '?')} {ip.get('city', '?')}）",
+              f"- ASN：{ip.get('as', '?')} / {ip.get('isp', '?')}",
+              f"- 纯净度：{d['purity']}"]
+        dns = d.get("dns") or {}
+        if dns.get("ok"):
+            L.append(f"- DNS：{'⚠️ 存在泄露' if dns.get('leak') else '✅ 无泄露'}（{dns.get('resolver_geo')}）")
+        unl = sum(1 for v in d["unlock"].values() if v == 200)
+        L.append(f"- 解锁：{unl}/{len(d['unlock'])}")
+        for name, code in d["unlock"].items():
+            mark = "✅" if code == 200 else ("⚠️" if code in (403, 451) else "❌")
+            L.append(f"  - {mark} {name}")
+        L.append(f"- IPv6：{d.get('ipv6') or '无'}")
+        for label, ms in (d.get("latency") or {}).items():
+            L.append(f"- 延迟 {label}：{str(ms) + ' ms' if ms else '失败'}")
+        for name, mbps in (d.get("speed") or {}).items():
+            L.append(f"- 下载 {name}：{str(mbps) + ' Mbps' if mbps else '失败'}")
+        L += ["", "---", ""]
+    L.append("_由 NetPulse 生成 · 状态码为初步判断_")
     return "\n".join(L)
 
 
 def main():
     global NO_COLOR
-    ap = argparse.ArgumentParser(description="NetPulse — 一键服务器网络体检（agent 友好）")
-    ap.add_argument("--host", metavar="user@host",
-                    help="本地发起：经 SSH 在远端执行，结果取回本地")
+    ap = argparse.ArgumentParser(description="NetPulse — 为 AI agent 而生的 VPS 巡检工具")
+    ap.add_argument("--host", action="append", default=[], metavar="user@host",
+                    help="本地发起：经 SSH 在远端执行（可重复指定，批量巡检）")
     ap.add_argument("--json", action="store_true",
                     help="输出机器可读的 JSON（agent/脚本友好）")
     ap.add_argument("--share", action="store_true", help="另存 Markdown 报告")
@@ -314,21 +450,35 @@ def main():
     a = ap.parse_args()
     NO_COLOR = a.no_color or a.json
 
-    data = run_remote(a.host) if a.host else collect(progress=not a.json)
+    if a.host:
+        with futures.ThreadPoolExecutor(max_workers=min(8, len(a.host))) as ex:
+            datas = list(ex.map(run_remote, a.host))
+    else:
+        datas = [collect(progress=not a.json)]
+
+    failed = [d for d in datas if d.get("error")]
 
     if a.json:
-        print(json.dumps(data, ensure_ascii=False, indent=2))
+        out = datas[0] if len(datas) == 1 else datas
+        print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
-        render_terminal(data)
+        for d in datas:
+            if d.get("error"):
+                print(bad(f"[{d['host']}] {d['error']}"))
+            else:
+                render_terminal(d)
+        render_compare(datas)
 
     if a.share:
-        md = render_share_md(data)
-        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in data["host"])
-        fn = f"netpulse-report-{safe}-{time.strftime('%Y%m%d-%H%M%S')}.md"
+        md = render_share_md(datas)
+        fn = f"netpulse-report-{time.strftime('%Y%m%d-%H%M%S')}.md"
         with open(fn, "w", encoding="utf-8") as f:
             f.write(md)
         print()
         print(ok(f"报告已保存：{fn}"))
+
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

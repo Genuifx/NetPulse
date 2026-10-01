@@ -1,67 +1,77 @@
 # NetPulse
 
-> One command. A full health check for your server's network.
->
-> English · [中文](README_zh.md)
+> **The VPS inspector built for AI agents**: one command from your laptop, health-check your whole fleet, pipe results straight to an agent.
+
+[English](README.md) · [中文](README_zh.md)
 
 ![demo](asset/demo.svg)
 
-## What it checks
+## The killer feature: agent-friendly + fleet inspection
 
-| Check | Description |
-|---|---|
-| 🌐 IP info | IP, geolocation, ASN, ISP |
-| 🧼 IP purity | Datacenter / residential / proxy traits, with a plain-language explanation |
-| 🎬 Streaming / AI unlock | Netflix, Disney+, YouTube Premium, TikTok, ChatGPT, Gemini (HTTP-status based, preliminary) |
-| 🚀 Speed test | Multi-endpoint download test |
-| 📋 Shareable report | `--share` generates a Markdown report |
+Other checkup scripts make you SSH into each box and run them. NetPulse flips it — **you launch from your laptop, it executes on the remote box, results come back to you**:
 
-## Install
+- **Launch locally**: `--host user@host` ships the script over SSH and runs it remotely; missing deps auto-install, zero manual steps on the remote
+- **Fleet inspection**: repeat `--host` to check your whole fleet at once, with a multi-host comparison table
+- **JSON output**: `--json` is machine-readable — pipe into `jq` or feed to an AI agent
+- **Non-interactive**: no prompts, no color in JSON mode, clear errors + non-zero exit codes so agents never hang
 
-**One-liner (recommended):**
+```bash
+# Inspect three boxes, hand the JSON to an agent
+python3 netpulse.py --host root@vps-a --host root@vps-b --host root@vps-c --json | jq .
+```
+
+## One-liner
+
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)
 ```
 
-**Manual:**
-```bash
-git clone https://github.com/Genuifx/NetPulse.git
-cd NetPulse
-pip install -r requirements.txt
-python3 netpulse.py --share
-```
-
-## Agent-friendly
-
-Built for AI agents / automation scripts:
-
-- `--json`: machine-readable JSON output, no colors, no interaction — pipe straight into `jq`
-- `--host user@host`: initiate locally, execute on the remote host over SSH, results come back (missing `requests` on the remote is auto-installed)
-- Non-interactive, non-zero exit code with a clear error message on failure
+Or manually:
 
 ```bash
-# Initiate locally, check a remote VPS, JSON output
-python3 netpulse.py --host root@1.2.3.4 --json | jq '{purity: .purity, unlock: .unlock}'
-
-# Agent batch-checks multiple machines
-for h in root@a root@b; do python3 netpulse.py --host $h --json; done | jq -s .
+git clone https://github.com/Genuifx/NetPulse.git && cd NetPulse
+python3 netpulse.py
 ```
+
+Only dependency is `requests` (auto-installed when missing).
+
+## What it checks
+
+| Category | Details |
+|---|---|
+| IP info | Egress IP, location, ASN, ISP |
+| IP purity | Datacenter IP / residential IP / proxy traits |
+| DNS leak | Resolver geo vs IP geo |
+| Unlock tests | Netflix, Disney+, YouTube Premium, HBO Max, Hulu, Prime Video, TikTok, Spotify, ChatGPT, Claude, Gemini (11 targets) |
+| Network quality | IPv6 egress, TCP latency to Cloudflare/Google/Baidu, download speed |
+
+`--share` saves a Markdown report — handy for group chats or support tickets.
+
+## The standard agent recipe
+
+```bash
+# Quick verdict: IP purity + unlock count
+python3 netpulse.py --host root@1.2.3.4 --json \
+  | jq '{purity: .purity, unlock: [.unlock[] | select(. == 200)] | length}'
+
+# Inspect the whole fleet
+python3 netpulse.py --host root@a --host root@b --host root@c --json \
+  | jq '.[] | {host, purity, ipv6}'
+```
+
+JSON fields: `tool` / `version` / `timestamp` / `host` / `ip` / `purity` / `dns` / `unlock` / `ipv6` / `latency` / `speed` / `summary`; on failure an `error` field + non-zero exit code.
 
 ## FAQ
 
-**Q: Does it have to run on the VPS?**
-A: Not necessarily. NetPulse tests the **target machine's** network egress: either run it on the VPS directly, or initiate locally with `--host user@host` (executes remotely over SSH, results come back). To test a proxy node, run it locally behind that node.
+**How accurate are the unlock tests?**
+HTTP status only — a first pass (200 ≈ reachable, 403/451 ≈ likely geo-blocked). Use a dedicated script to double-check Netflix etc. We're the quick triage, not the final word.
 
-**Q: How accurate is the unlock check?**
-A: It's a preliminary check based on HTTP status codes. Use a dedicated script to double-check services like Netflix.
+**What does `--host` need?**
+An `ssh` binary locally, `python3` on the remote, and key-based auth (`BatchMode=yes` — no interactive password prompts).
 
-**Q: Does it need root?**
-A: No. Pure Python, only depends on `requests`.
+**Jump hosts / custom ports?**
+`--host` is plain SSH — your `~/.ssh/config` applies as usual.
 
 ## Disclaimer
 
-Only use on servers / networks you own or are authorized to test.
-
-## License
-
-MIT — forks and remixes welcome, keep the author link.
+This tool inspects the network of **your own servers** only. It does not scan or track anyone else. Don't run it on machines you aren't authorized for.
