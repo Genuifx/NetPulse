@@ -6,7 +6,7 @@
 
 ![demo](asset/demo.svg)
 
-## The killer feature: agent-friendly + fleet inspection
+## Why NetPulse: agent-friendly + fleet inspection
 
 Other checkup scripts make you SSH into each box and run them. NetPulse flips it — **you launch from your laptop, it executes on the remote box, results come back to you**:
 
