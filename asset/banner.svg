@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200">
+<rect width="800" height="200" rx="16" fill="#0d1117"/>
+<text x="40" y="95" font-family="monospace" font-size="44" font-weight="bold" fill="#22d3ee">NetPulse</text>
+<text x="40" y="140" font-family="monospace" font-size="20" fill="#8b949e">一条命令，给你的服务器做一次全面体检</text>
+<text x="40" y="170" font-family="monospace" font-size="14" fill="#484f58">IP 纯净度 · 流媒体解锁 · 速度测试 · 一键报告</text>
+</svg>
