@@ -1,0 +1,46 @@
+# NetPulse
+
+> The VPS inspector built for AI agents: one command from your laptop, health-check your whole fleet, pipe results straight to an agent.
+
+NetPulse is a single-file Python CLI that checks a VPS's network health: egress IP
+info (IP, location, ASN, ISP), IP purity (datacenter / residential / proxy traits),
+DNS leak detection (resolver geo vs IP geo), streaming & AI unlock tests (Netflix,
+Disney+, YouTube Premium, HBO Max, Hulu, Prime Video, TikTok, Spotify, ChatGPT,
+Claude, Gemini), IPv6 egress, TCP latency to Cloudflare/Google/Baidu, and download
+speed tests.
+
+Key differentiator: agent-friendly fleet inspection. Launch locally with
+`--host user@host` (repeatable) — the script is shipped over SSH, executed remotely,
+and results return as JSON. Non-interactive, machine-readable, clear exit codes.
+
+## Install
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)
+```
+
+Only dependency: `requests` (auto-installed when missing, including on remote hosts).
+
+## Usage
+
+```bash
+python3 netpulse.py                                  # check this machine
+python3 netpulse.py --host root@1.2.3.4              # launch locally, run remotely
+python3 netpulse.py --host root@a --host root@b --json | jq .   # fleet inspection
+python3 netpulse.py --share                          # save Markdown report
+```
+
+`--host` needs key-based SSH auth (`BatchMode=yes`) and `python3` on the remote host.
+
+## JSON schema (--json)
+
+Single host returns one object; multiple `--host` flags return an array.
+Fields: `tool`, `version`, `timestamp`, `host`, `ip`, `purity`, `dns`, `unlock`
+(map of service name to HTTP status code), `ipv6`, `latency`, `speed`, `summary`.
+On failure: an `error` field and a non-zero exit code.
+
+## Notes
+
+- Unlock tests are HTTP-status triage only (200 ≈ reachable, 403/451 ≈ likely
+  geo-blocked); use a dedicated script to confirm services like Netflix.
+- For your own servers only. MIT licensed.
