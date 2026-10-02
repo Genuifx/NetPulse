@@ -4,6 +4,8 @@
 
 [English](README.md) · [中文](README_zh.md)
 
+🌐 Website: https://genuifx.github.io/NetPulse/
+
 ![demo](asset/demo.svg)
 
 ## Why NetPulse: agent-friendly + fleet inspection

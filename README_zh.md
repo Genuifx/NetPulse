@@ -4,6 +4,8 @@
 
 [English](README.md) · [中文](README_zh.md)
 
+🌐 官网: https://genuifx.github.io/NetPulse/
+
 ![demo](asset/demo.svg)
 
 ## 核心特性：agent 友好 + 批量巡检
