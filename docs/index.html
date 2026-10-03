@@ -428,7 +428,7 @@ footer{padding:64px 0 48px;margin-top:120px;border-top:1px solid var(--line)}
         <article class="feat">
           <div class="feat-top"><div class="feat-ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg></div><span class="feat-num">02</span></div>
           <h3>IP 纯净度 · 原生判定</h3>
-          <p>机房 IP / 未标记 / 代理特征三档判定；对比 ASN 注册地与 IP 属地，给出原生 IP 结论。</p>
+          <p>机房 IP / 未标记 / 代理特征三档判定；通过 Team Cymru 查询 ASN 注册国家，与 IP 属地对比；查不到则给出无结论。</p>
           <div class="tags"><span>机房识别</span><span>原生 IP</span></div>
         </article>
         <article class="feat">
@@ -675,7 +675,7 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
   var L=[
     '<span class="c-p">root@vps</span>:<span class="c-b">~</span># python3 netpulse.py --host root@vps-tokyo --host root@vps-sg',
     '',
-    '<span class="c-a">▍</span><span class="c-h">NetPulse</span> <span class="c-m">v0.5.0 · 为 AI Agent 而生的 VPS 巡检工具</span>',
+    '<span class="c-a">▍</span><span class="c-h">NetPulse</span> <span class="c-m">v0.5.1 · 为 AI Agent 而生的 VPS 巡检工具</span>',
     '<span class="c-m">─────────────────────────────────────────────────────</span>',
     '<span class="c-b">[1/5]</span> <span class="c-h">IP 信息</span>  <span class="c-m">[root@vps-tokyo]</span>',
     '      IP          <span class="c-a">203.0.113.10</span>',

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NetPulse v0.4.0 — 为 AI agent 而生的 VPS 巡检工具
+NetPulse v0.5.1 — 为 AI agent 而生的 VPS 巡检工具
 用法:
   python3 netpulse.py                                  本机体检
   python3 netpulse.py --host root@a --host root@b      本地发起：批量巡检多台机器
@@ -24,17 +24,19 @@ NetPulse v0.4.0 — 为 AI agent 而生的 VPS 巡检工具
 import argparse
 import concurrent.futures as futures
 import functools
+import ipaddress
 import json
 import os
 import random
 import re
+import shlex
 import socket
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 SCHEMA = 1
 
 # ---------- 依赖懒加载：import 失败不退出，保证 --help 可用 ----------
@@ -171,28 +173,36 @@ def check_purity(ip_check):
     return _mk("unknown", value="未知")
 
 
-def _asn_country_iptoasn(session, ip):
-    """免费无 key 的 IP→ASN 接口，返回 (asn_number, asn_country_code)。"""
-    d = session.get(f"https://api.iptoasn.com/v1/as/ip/{ip}", timeout=10).json()
-    asn = d.get("as_number")
-    for k in ("as_country_code", "country_code", "country"):
-        v = d.get(k)
-        if v and len(str(v).strip()) == 2:
-            return asn, str(v).strip().upper()
-    return asn, None
+DOH_RESOLVERS = ("https://dns.google/resolve",
+                 "https://cloudflare-dns.com/dns-query")
 
 
-def _asn_country_ripestat(session, ip):
-    """RIPEstat whois 兜底：取 inetnum/aut-num 记录里的 country 字段。"""
-    d = session.get(f"https://stat.ripe.net/data/whois/data.json?resource={ip}",
-                    timeout=10).json()
-    for group in (d.get("data") or {}).get("records") or []:
-        for rec in group:
-            if str(rec.get("key", "")).lower() == "country":
-                v = str(rec.get("value", "")).strip().upper()
-                if len(v) == 2:
-                    return v
-    return None
+def _cymru_txt(session, name):
+    """通过 DoH 读取 Team Cymru TXT；备用解析器不改变数据源。"""
+    errors = []
+    for resolver in DOH_RESOLVERS:
+        try:
+            r = session.get(resolver, params={"name": name, "type": "TXT",
+                                             "edns_client_subnet": "0.0.0.0/0"},
+                            headers={"Accept": "application/dns-json"}, timeout=5)
+            r.raise_for_status()
+            d = r.json()
+            if d.get("Status") != 0 or d.get("TC"):
+                raise ValueError(f"DNS status={d.get('Status')}, TC={d.get('TC')}")
+            texts = []
+            for answer in d.get("Answer") or []:
+                if (answer.get("type") != 16 or
+                        str(answer.get("name", "")).rstrip(".").lower() != name.lower()):
+                    continue
+                text = str(answer.get("data", "")).strip()
+                # Google/Cloudflare 可返回带引号的多个 TXT 字符串，也可不带引号。
+                texts.append("".join(shlex.split(text)) if text.startswith('"') else text)
+            if not texts:
+                raise ValueError("未返回 TXT 记录")
+            return texts, resolver
+        except Exception as e:
+            errors.append(f"{resolver}: {type(e).__name__}: {e}")
+    raise ValueError(f"{name}: " + "; ".join(errors))
 
 
 @check
@@ -203,23 +213,51 @@ def check_native(session, ip_str, geo_cc):
         return miss
     if not ip_str or not geo_cc:
         return _mk("unknown", value="无结论", error="缺少 IP 或属地信息")
-    asn = asn_cc = None
+    ev = {"asn": None, "asn_country": None, "geo_country": str(geo_cc).upper(),
+          "source": "Team Cymru", "country_basis": "ASN RIR registration",
+          "queries": []}
     try:
-        asn, asn_cc = _asn_country_iptoasn(session, ip_str)
-    except Exception:
-        pass
-    if not asn_cc:
-        try:
-            asn_cc = _asn_country_ripestat(session, ip_str)
-        except Exception:
-            pass
-    ev = {"asn": asn, "asn_country": asn_cc,
-          "geo_country": str(geo_cc).upper(),
-          "source": "iptoasn.com / stat.ripe.net"}
-    if not asn_cc:
+        ip = ipaddress.ip_address(ip_str)
+        if not re.fullmatch(r"[A-Z]{2}", ev["geo_country"]) or ev["geo_country"] == "ZZ":
+            raise ValueError("无效的 IP 属地国家码")
+        if ip.version == 4:
+            origin = ".".join(reversed(str(ip).split("."))) + ".origin.asn.cymru.com"
+        else:
+            origin = ".".join(reversed(ip.exploded.replace(":", ""))) + ".origin6.asn.cymru.com"
+        texts, resolver = _cymru_txt(session, origin)
+        ev["queries"].append({"name": origin, "resolver": resolver})
+        # origin TXT 中的 country 属于网段，不能拿来当 ASN 国家。
+        asns = set()
+        for text in texts:
+            parts = [x.strip() for x in text.split("|")]
+            if len(parts) != 5:
+                raise ValueError("无效的 IP→ASN 记录")
+            if ip not in ipaddress.ip_network(parts[1], strict=False):
+                raise ValueError("IP→ASN 网段与查询 IP 不匹配")
+            for number in parts[0].split():
+                if not number.isdigit() or not 0 < int(number) < 2**32:
+                    raise ValueError("无效的 ASN")
+                asns.add(int(number))
+        if len(asns) != 1:
+            raise ValueError("IP 未对应唯一 ASN，无法判定")
+        asn = ev["asn"] = asns.pop()
+        name = f"AS{asn}.asn.cymru.com"
+        texts, resolver = _cymru_txt(session, name)
+        ev["queries"].append({"name": name, "resolver": resolver})
+        countries = set()
+        for text in texts:
+            parts = [x.strip() for x in text.split("|", 4)]
+            if (len(parts) != 5 or parts[0] != str(asn) or
+                    not re.fullmatch(r"[A-Z]{2}", parts[1]) or parts[1] == "ZZ"):
+                raise ValueError("ASN 注册国家记录缺失或不匹配")
+            countries.add(parts[1])
+        if len(countries) != 1:
+            raise ValueError("ASN 注册国家存在冲突")
+        ev["asn_country"] = countries.pop()
+    except Exception as e:
         return _mk("unknown", value="无结论", evidence=ev,
-                   error="ASN 注册地查询失败")
-    if asn_cc == str(geo_cc).upper():
+                   error=f"ASN 注册地查询失败：{e}")
+    if ev["asn_country"] == ev["geo_country"]:
         return _mk("ok", value="原生 IP", evidence=ev)
     return _mk("negative", value="非原生 IP", evidence=ev)
 

@@ -86,3 +86,14 @@ JSON 为固定 envelope：`{schema, tool, version, generated_at, results[]}`，
 ## 免责声明
 
 本工具仅检测**你自己的服务器**的网络状况，不做任何针对他人的扫描或追踪。请勿用于未授权的机器。
+
+## 原生 IP 判定（v0.5.1）
+
+数据源为 [Team Cymru](https://www.team-cymru.com/ip-asn-mapping)，免费且无需 key。
+通过 DNS-over-HTTPS 先查询 IP 的 BGP origin ASN，再单独查询 `AS编号.asn.cymru.com`
+中的 ASN 注册国家。网段注册国家与组织地址不作为 ASN 国家使用。
+Google Public DNS 为首选解析器，Cloudflare 为备用；无需增加依赖。
+
+`checks.native.evidence` 包含 ASN、ASN 注册国家、IP 属地、数据源及实际 DNS 查询/解析器。
+查询失败、多个 origin ASN、国家记录缺失或冲突时返回 `unknown`。
+“原生”仅表示这两个国家码一致，不证明住宅 IP、低风控或服务解锁。

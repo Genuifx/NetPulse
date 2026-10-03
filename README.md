@@ -88,3 +88,17 @@ An `ssh` binary locally, `python3` + `requests` (`pip install requests`) on the 
 ## Disclaimer
 
 This tool inspects the network of **your own servers** only. It does not scan or track anyone else. Don't run it on machines you aren't authorized for.
+
+## Native IP methodology (v0.5.1)
+
+[Team Cymru](https://www.team-cymru.com/ip-asn-mapping) supplies free, keyless
+registry data. NetPulse resolves the IP's BGP origin ASN, then separately queries
+`AS<number>.asn.cymru.com` for the ASN's registered country. The IP prefix's
+country and organization address are never substituted for the ASN country.
+DNS-over-HTTPS uses Google Public DNS with Cloudflare as a fallback resolver;
+no additional Python dependency is required.
+
+`checks.native.evidence` records the ASN, ASN country, IP geo country, source,
+and DNS queries/resolvers. Failed lookups, multiple origin ASNs, missing country
+records or conflicting results produce `unknown`. Matching country codes do not
+prove residential status, low fraud risk, or streaming/AI access.
