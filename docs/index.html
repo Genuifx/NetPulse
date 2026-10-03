@@ -487,16 +487,19 @@ report = netpulse_check(<span class="s">"root@1.2.3.4"</span>)
 unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class="k">in</span> report[<span class="s">"unlock"</span>].values() <span class="k">if</span> v == <span class="n">200</span>)
 <span class="k">print</span>(report[<span class="s">"purity"</span>], f<span class="s">"{unlocked}/11 解锁"</span>)</pre></div>
         <div class="panel" data-panel="json"><pre><span class="p">{</span>
-  <span class="b c-b">"tool"</span>: <span class="s">"netpulse"</span>, <span class="b c-b">"version"</span>: <span class="s">"0.3.0"</span>,
-  <span class="b c-b">"host"</span>: <span class="s">"root@1.2.3.4"</span>, <span class="b c-b">"timestamp"</span>: <span class="s">"2026-10-02T10:30:00"</span>,
-  <span class="b c-b">"ip"</span>: <span class="p">{</span> <span class="b c-b">"query"</span>: <span class="s">"203.0.113.10"</span>, <span class="b c-b">"country"</span>: <span class="s">"Japan"</span>, … <span class="p">}</span>,
-  <span class="b c-b">"purity"</span>: <span class="s">"机房 IP（数据中心）"</span>,
-  <span class="b c-b">"dns"</span>: <span class="p">{</span> <span class="b c-b">"leak"</span>: <span class="k">false</span>, <span class="b c-b">"resolver_geo"</span>: <span class="s">"Japan"</span> <span class="p">}</span>,
-  <span class="b c-b">"unlock"</span>: <span class="p">{</span> <span class="b c-b">"Netflix"</span>: <span class="n">200</span>, <span class="b c-b">"Disney+"</span>: <span class="n">200</span>, … <span class="p">}</span>,
-  <span class="b c-b">"ipv6"</span>: <span class="s">"2a04:4e41::d33b:6ea1"</span>,
-  <span class="b c-b">"latency"</span>: <span class="p">{</span> <span class="b c-b">"Cloudflare"</span>: <span class="n">12</span>, <span class="b c-b">"Google"</span>: <span class="n">15</span> <span class="p">}</span>,
-  <span class="b c-b">"speed"</span>: <span class="p">{</span> <span class="b c-b">"Cloudflare"</span>: <span class="n">88.2</span> <span class="p">}</span>,
-  <span class="b c-b">"summary"</span>: <span class="p">[</span> <span class="s">"…"</span> <span class="p">]</span>
+  <span class="b c-b">"schema"</span>: <span class="n">1</span>, <span class="b c-b">"tool"</span>: <span class="s">"netpulse"</span>,
+  <span class="b c-b">"version"</span>: <span class="s">"0.4.0"</span>, <span class="b c-b">"generated_at"</span>: <span class="s">"2026-10-03T17:30:00+08:00"</span>,
+  <span class="b c-b">"results"</span>: <span class="p">[{</span>
+    <span class="b c-b">"host"</span>: <span class="s">"root@1.2.3.4"</span>, <span class="b c-b">"status"</span>: <span class="s">"ok"</span>,
+    <span class="b c-b">"checks"</span>: <span class="p">{</span>
+      <span class="b c-b">"purity"</span>: <span class="p">{</span><span class="b c-b">"status"</span>: <span class="s">"ok"</span>, <span class="b c-b">"value"</span>: <span class="s">"机房 IP（数据中心）"</span>…<span class="p">}</span>,
+      <span class="b c-b">"unlock"</span>: <span class="p">{</span><span class="b c-b">"status"</span>: <span class="s">"ok"</span>,
+        <span class="b c-b">"value"</span>: <span class="p">{</span><span class="b c-b">"ChatGPT"</span>: <span class="p">{</span><span class="b c-b">"status"</span>: <span class="s">"ok"</span>,
+          <span class="b c-b">"value"</span>: <span class="s">"API 可达（需自备 key）"</span><span class="p">}</span>…<span class="p">}</span>…<span class="p">}</span>,
+      <span class="b c-b">"dns"</span>: <span class="p">{</span><span class="b c-b">"status"</span>: <span class="s">"ok"</span>, <span class="b c-b">"evidence"</span>: <span class="p">{</span><span class="b c-b">"leak"</span>: <span class="k">false</span><span class="p">}</span>…<span class="p">}</span>
+    <span class="p">}</span>,
+    <span class="b c-b">"summary"</span>: <span class="p">[</span><span class="s">"AI 服务 API 均可达…"</span><span class="p">]</span>
+  <span class="p">}]</span>
 <span class="p">}</span></pre></div>
       </div>
     </div>

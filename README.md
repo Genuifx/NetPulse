@@ -52,16 +52,26 @@ Only dependency is `requests` (auto-installed when missing).
 ## The standard agent recipe
 
 ```bash
-# Quick verdict: IP purity + unlock count
+# Quick verdict: IP purity + AI reachability
 python3 netpulse.py --host root@1.2.3.4 --json \
-  | jq '{purity: .purity, unlock: [.unlock[] | select(. == 200)] | length}'
+  | jq '.results[0] | {purity: .checks.purity.value, ai: [.checks.unlock.value | to_entries[] | select(["ChatGPT","Claude","Gemini"] | index(.key)) | {key, status: .value.status}]}'
 
 # Inspect the whole fleet
 python3 netpulse.py --host root@a --host root@b --host root@c --json \
-  | jq '.[] | {host, purity, ipv6}'
+  | jq '.results[] | {host, status, purity: .checks.purity.value}'
 ```
 
-JSON fields: `tool` / `version` / `timestamp` / `host` / `ip` / `purity` / `dns` / `unlock` / `ipv6` / `latency` / `speed` / `summary`; on failure an `error` field + non-zero exit code.
+JSON is a fixed envelope: `{schema, tool, version, generated_at, results[]}` —
+same shape for one host or many. Each result carries `status` (ok/error),
+`error_code`, `checks` (each `{status, value, evidence, error, duration_ms}`,
+status ∈ ok/negative/unknown/error/skipped) and `summary`. In `--json` mode,
+stdout is pure JSON.
+
+Exit codes: `0` all hosts fine, `1` some hosts failed, `2` all hosts failed.
+
+Other flags: `--no-speed` skips speed tests (for metered boxes), `--timeout SEC`
+sets the overall time budget (default 120s), `--share -o report.md` saves a
+Markdown report.
 
 ## FAQ
 

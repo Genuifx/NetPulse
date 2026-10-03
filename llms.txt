@@ -34,10 +34,16 @@ python3 netpulse.py --share                          # save Markdown report
 
 ## JSON schema (--json)
 
-Single host returns one object; multiple `--host` flags return an array.
-Fields: `tool`, `version`, `timestamp`, `host`, `ip`, `purity`, `dns`, `unlock`
-(map of service name to HTTP status code), `ipv6`, `latency`, `speed`, `summary`.
-On failure: an `error` field and a non-zero exit code.
+Fixed envelope, same shape for one host or many:
+`{schema, tool, version, generated_at, results[]}`. Each result: `host`,
+`status` (ok/error), `error_code`, `checks`, `summary`. Every check returns
+`{status, value, evidence, error, duration_ms}` with status in
+ok/negative/unknown/error/skipped — "unknown" means inconclusive, never a
+verdict. In `--json` mode stdout is pure JSON. Exit codes: 0 all hosts fine,
+1 some failed, 2 all failed.
+
+AI reachability is judged via API endpoints (a 401 without key proves
+reachability); homepage status codes are not used as evidence.
 
 ## Notes
 

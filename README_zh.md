@@ -52,16 +52,24 @@ python3 netpulse.py
 ## 给 agent 用的标准姿势
 
 ```bash
-# 快速判断：IP 纯净度 + 解锁数
+# 快速判断：IP 纯净度 + AI 服务可达情况
 python3 netpulse.py --host root@1.2.3.4 --json \
-  | jq '{purity: .purity, unlock: [.unlock[] | select(. == 200)] | length}'
+  | jq '.results[0] | {purity: .checks.purity.value, ai: [.checks.unlock.value | to_entries[] | select(["ChatGPT","Claude","Gemini"] | index(.key)) | {key, status: .value.status}]}'
 
 # 批量巡检整个 fleet
 python3 netpulse.py --host root@a --host root@b --host root@c --json \
-  | jq '.[] | {host, purity, ipv6}'
+  | jq '.results[] | {host, status, purity: .checks.purity.value}'
 ```
 
-JSON 字段：`tool` / `version` / `timestamp` / `host` / `ip` / `purity` / `dns` / `unlock` / `ipv6` / `latency` / `speed` / `summary`，失败时为 `error` 字段 + 非零退出码。
+JSON 为固定 envelope：`{schema, tool, version, generated_at, results[]}`，
+单台多台结构一致。每台结果含 `status`（ok/error）、`error_code`、`checks`（每项
+`{status, value, evidence, error, duration_ms}`，status ∈ ok/negative/unknown/error/skipped）
+和 `summary`。stdout 在 `--json` 模式下只输出纯 JSON。
+
+退出码：`0` 全部主机正常，`1` 部分主机失败，`2` 全部失败。
+
+其他选项：`--no-speed` 跳过测速（按流量计费时用），`--timeout SEC` 整体时间预算
+（默认 120 秒），`--share -o 报告.md` 保存 Markdown 报告。
 
 ## FAQ
 
