@@ -43,6 +43,7 @@ python3 netpulse.py
 |---|---|
 | IP 信息 | 出口 IP、位置、ASN、运营商 |
 | IP 纯净度 | 机房 IP / 家宽 IP / 代理特征 |
+| 原生 IP | ASN 注册地 vs IP 属地 |
 | DNS 泄露 | 解析出口属地 vs IP 属地 |
 | 解锁检测 | Netflix、Disney+、YouTube Premium、HBO Max、Hulu、Prime Video、TikTok、Spotify、ChatGPT、Claude、Gemini（11 项） |
 | 网络质量 | IPv6 出口、到 Cloudflare/Google/百度的 TCP 延迟、下载测速 |

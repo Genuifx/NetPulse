@@ -43,6 +43,7 @@ Only dependency is `requests` (pre-install on remote hosts: `pip install request
 |---|---|
 | IP info | Egress IP, location, ASN, ISP |
 | IP purity | Datacenter IP / residential IP / proxy traits |
+| Native IP | ASN registration country vs IP geo |
 | DNS leak | Resolver geo vs IP geo |
 | Unlock tests | Netflix, Disney+, YouTube Premium, HBO Max, Hulu, Prime Video, TikTok, Spotify, ChatGPT, Claude, Gemini (11 targets) |
 | Network quality | IPv6 egress, TCP latency to Cloudflare/Google/Baidu, download speed |

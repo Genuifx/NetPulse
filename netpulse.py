@@ -34,7 +34,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 SCHEMA = 1
 
 # ---------- 依赖懒加载：import 失败不退出，保证 --help 可用 ----------
@@ -169,6 +169,59 @@ def check_purity(ip_check):
         return _mk("ok", value="未被标记为机房/代理",
                    evidence={"hosting": False, "proxy": False})
     return _mk("unknown", value="未知")
+
+
+def _asn_country_iptoasn(session, ip):
+    """免费无 key 的 IP→ASN 接口，返回 (asn_number, asn_country_code)。"""
+    d = session.get(f"https://api.iptoasn.com/v1/as/ip/{ip}", timeout=10).json()
+    asn = d.get("as_number")
+    for k in ("as_country_code", "country_code", "country"):
+        v = d.get(k)
+        if v and len(str(v).strip()) == 2:
+            return asn, str(v).strip().upper()
+    return asn, None
+
+
+def _asn_country_ripestat(session, ip):
+    """RIPEstat whois 兜底：取 inetnum/aut-num 记录里的 country 字段。"""
+    d = session.get(f"https://stat.ripe.net/data/whois/data.json?resource={ip}",
+                    timeout=10).json()
+    for group in (d.get("data") or {}).get("records") or []:
+        for rec in group:
+            if str(rec.get("key", "")).lower() == "country":
+                v = str(rec.get("value", "")).strip().upper()
+                if len(v) == 2:
+                    return v
+    return None
+
+
+@check
+def check_native(session, ip_str, geo_cc):
+    """原生 IP 判定：ASN 注册地 == IP 属地。查不到就 unknown，不硬编结论。"""
+    miss = _need_requests()
+    if miss:
+        return miss
+    if not ip_str or not geo_cc:
+        return _mk("unknown", value="无结论", error="缺少 IP 或属地信息")
+    asn = asn_cc = None
+    try:
+        asn, asn_cc = _asn_country_iptoasn(session, ip_str)
+    except Exception:
+        pass
+    if not asn_cc:
+        try:
+            asn_cc = _asn_country_ripestat(session, ip_str)
+        except Exception:
+            pass
+    ev = {"asn": asn, "asn_country": asn_cc,
+          "geo_country": str(geo_cc).upper(),
+          "source": "iptoasn.com / stat.ripe.net"}
+    if not asn_cc:
+        return _mk("unknown", value="无结论", evidence=ev,
+                   error="ASN 注册地查询失败")
+    if asn_cc == str(geo_cc).upper():
+        return _mk("ok", value="原生 IP", evidence=ev)
+    return _mk("negative", value="非原生 IP", evidence=ev)
 
 
 @check
@@ -410,6 +463,13 @@ def build_summary(checks):
             tips.append("机房 IP：适合建站/做节点；注册风控严的平台账号时多加小心。")
         elif "未被标记" in label:
             tips.append("IP 未被标记为机房/代理，初步判断相对干净；单数据源结论，仅供参考。")
+    native = checks.get("native") or {}
+    if native.get("status") == "ok":
+        tips.append("原生 IP：ASN 注册地与 IP 属地一致。")
+    elif native.get("status") == "negative":
+        ev = native.get("evidence") or {}
+        tips.append(f"非原生 IP：ASN 注册于 {ev.get('asn_country')}，"
+                    f"IP 定位 {ev.get('geo_country')}，部分风控严的场景可能受影响。")
     dns = checks.get("dns") or {}
     if dns.get("status") == "ok" and (dns.get("evidence") or {}).get("leak"):
         tips.append(f"DNS 解析器属地（{dns['evidence'].get('resolver_geo')}）与 IP 属地不一致 "
@@ -471,7 +531,11 @@ def collect(progress=False, deadline=None, no_speed=False):
     checks = {}
     checks["ip"] = step("正在查询 IP 信息", lambda: check_ip(session))
     checks["purity"] = check_purity(checks["ip"])
-    country = (checks["ip"].get("value") or {}).get("country")
+    ip_val = checks["ip"].get("value") or {}
+    checks["native"] = step("正在判定原生 IP",
+                            lambda: check_native(session, ip_val.get("query"),
+                                                 ip_val.get("countryCode")))
+    country = ip_val.get("country")
     checks["dns"] = step("正在检测 DNS", lambda: check_dns(session, country))
     checks["unlock"] = step("正在检测流媒体/AI", lambda: check_unlock(session))
     checks["ipv6"] = step("正在检测 IPv6", lambda: check_ipv6(session))
@@ -606,6 +670,15 @@ def render_terminal(result):
     if purity.get("status") == "unknown":
         print(p(f"    （{purity.get('error')}）", C.DIM))
     print(p("    “未被标记”指 ip-api 未将其标为机房/代理，不等于原生住宅 IP。", C.DIM))
+    native = checks.get("native") or {}
+    nv = native.get("value", "未知")
+    nev = native.get("evidence") or {}
+    if native.get("status") == "ok":
+        print("    " + ok(f"原生判定：{nv}（ASN{nev.get('asn')} 注册地 {nev.get('asn_country')}）"))
+    elif native.get("status") == "negative":
+        print("    " + warn(f"原生判定：{nv}（ASN 注册地 {nev.get('asn_country')}，IP 属地 {nev.get('geo_country')}）"))
+    else:
+        print("    " + unk(f"原生判定：无结论（{native.get('error') or '—'}）"))
 
     section("3/5 · DNS 解析器归属地")
     dns = checks.get("dns") or {}
@@ -675,7 +748,7 @@ def render_compare(results):
     if len(results) < 2:
         return
     section(f"多机对比（{len(results)} 台）")
-    cols = ["主机", "出口 IP", "纯净度", "流媒体", "AI", "延迟", "下载"]
+    cols = ["主机", "出口 IP", "纯净度", "原生", "流媒体", "AI", "延迟", "下载"]
     rows = []
     for r in results:
         checks = r.get("checks") or {}
@@ -685,6 +758,8 @@ def render_compare(results):
         s_n = sum(1 for k, v in unlock.items() if k not in AI_NAMES)
         a_ok = sum(1 for k, v in unlock.items()
                    if k in AI_NAMES and v.get("status") == "ok")
+        native_st = (checks.get("native") or {}).get("status")
+        native_s = {"ok": "原生", "negative": "非原生"}.get(native_st, "-")
         lat = (checks.get("latency") or {}).get("value") or {}
         lats = [v["value"] for v in lat.values() if v.get("status") == "ok"]
         spd = (checks.get("speed") or {}).get("value") or {}
@@ -693,6 +768,7 @@ def render_compare(results):
             r["host"],
             ((checks.get("ip") or {}).get("value") or {}).get("query", "-"),
             short_purity(checks),
+            native_s,
             f"{s_ok}/{s_n}",
             f"{a_ok}/3",
             f"{min(lats)}ms" if lats else "-",
@@ -718,6 +794,13 @@ def render_share_md(results, version):
               f"- 出口 IP：{ip.get('query', '-')}（{ip.get('country', '?')} {ip.get('city', '?')}）",
               f"- ASN：{ip.get('as', '?')} / {ip.get('isp', '?')}",
               f"- 纯净度：{(checks.get('purity') or {}).get('value', '未知')}"]
+        native = checks.get("native") or {}
+        nev = native.get("evidence") or {}
+        if native.get("status") in ("ok", "negative"):
+            L.append(f"- 原生 IP：{native.get('value')}（ASN{nev.get('asn')} 注册地 "
+                     f"{nev.get('asn_country')}，IP 属地 {nev.get('geo_country')}）")
+        else:
+            L.append(f"- 原生 IP：无结论（{native.get('error')}）")
         dns = checks.get("dns") or {}
         dev = dns.get("evidence") or {}
         if dns.get("status") == "ok":

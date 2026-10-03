@@ -128,6 +128,45 @@ t("全 skipped → skipped", np._agg({"a": child("skipped")}) == "skipped")
 t("混合 ok/error → ok", np._agg({"a": child("ok"), "b": child("error")}) == "ok")
 t("全 unknown → unknown", np._agg({"a": child("unknown")}) == "unknown")
 
+print("== 原生 IP 判定 ==")
+
+
+class FakeSession:
+    def __init__(self, payload=None, exc=None):
+        self.payload = payload
+        self.exc = exc
+
+    def get(self, url, timeout=None):
+        if self.exc:
+            raise self.exc
+        return FakeJSON(self.payload)
+
+
+class FakeJSON:
+    def __init__(self, payload):
+        self._p = payload
+
+    def json(self):
+        return self._p
+
+
+r = np.check_native(FakeSession({"as_number": 8075, "as_country_code": "US"}),
+                    "20.83.106.103", "US")
+t("注册地==属地 → 原生 ok", r["status"] == "ok" and r["value"] == "原生 IP")
+r = np.check_native(FakeSession({"as_number": 8075, "as_country_code": "US"}),
+                    "20.83.106.103", "JP")
+t("注册地!=属地 → 非原生 negative",
+  r["status"] == "negative" and r["evidence"]["asn_country"] == "US")
+r = np.check_native(FakeSession({"as_number": 8075},), "20.83.106.103", "US")
+t("查不到注册地 → unknown 不硬编", r["status"] == "unknown")
+r = np.check_native(FakeSession(exc=Exception("boom")), "20.83.106.103", "US")
+t("接口异常 → unknown", r["status"] == "unknown")
+# RIPEstat 兜底解析
+r = np._asn_country_ripestat(
+    FakeSession({"data": {"records": [[{"key": "country", "value": "us"}]]}}),
+    "1.1.1.1")
+t("RIPEstat country 解析", r == "US")
+
 print("== 终端渲染冒烟（回归 warn 未定义 crash）==")
 np.NO_COLOR = True
 fake_checks = {

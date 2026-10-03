@@ -4,7 +4,7 @@
 
 NetPulse is a single-file Python CLI that checks a VPS's network health: egress IP
 info (IP, location, ASN, ISP), IP purity (datacenter / residential / proxy traits),
-DNS leak detection (resolver geo vs IP geo), streaming & AI unlock tests (Netflix,
+native-IP check (ASN registration country vs IP geo), DNS leak detection (resolver geo vs IP geo), streaming & AI unlock tests (Netflix,
 Disney+, YouTube Premium, HBO Max, Hulu, Prime Video, TikTok, Spotify, ChatGPT,
 Claude, Gemini), IPv6 egress, TCP latency to Cloudflare/Google/Baidu, and download
 speed tests.
