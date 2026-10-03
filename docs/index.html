@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NetPulse — 为 AI agent 而生的 VPS 巡检工具</title>
-<meta name="description" content="NetPulse 是一条命令的 VPS 网络体检工具：IP 信息、IP 纯净度、DNS 泄露检测、11 项流媒体/AI 解锁、IPv6、延迟、测速。Agent 友好：本地发起、批量巡检整个 fleet，JSON 结果直接喂给 AI agent。">
+<title>NetPulse — 为 AI Agent 而生的 VPS 巡检工具</title>
+<meta name="description" content="NetPulse 是一条命令的 VPS 网络体检工具：IP 信息、IP 纯净度、DNS 泄露检测、11 项流媒体/AI 解锁、IPv6、延迟、测速。Agent 友好：本地发起、批量巡检整个 fleet，JSON 结果直接喂给 AI Agent。">
 <meta name="keywords" content="VPS,网络测试,测速,流媒体解锁,DNS泄露,IP纯净度,IPv6,agent,NetPulse">
 <meta property="og:type" content="website">
-<meta property="og:title" content="NetPulse — 为 AI agent 而生的 VPS 巡检工具">
+<meta property="og:title" content="NetPulse — 为 AI Agent 而生的 VPS 巡检工具">
 <meta property="og:description" content="本地一条命令，批量体检所有机器，结果直接喂给 agent。IP 纯净度、解锁检测、DNS 泄露、测速一次跑完。">
 <meta property="og:url" content="https://github.com/Genuifx/NetPulse">
 <meta property="og:site_name" content="NetPulse">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="NetPulse — 为 AI agent 而生的 VPS 巡检工具">
+<meta name="twitter:title" content="NetPulse — 为 AI Agent 而生的 VPS 巡检工具">
 <meta name="twitter:description" content="本地一条命令，批量体检所有机器，结果直接喂给 agent。">
 <meta name="theme-color" content="#07090c">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Cpath d='M4 17h6l3-8 5 15 3-7h7' fill='none' stroke='%2346f0a8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -134,13 +134,17 @@ code,pre,.mono{font-family:var(--mono)}
 
 .install{
   margin:44px auto 0;max-width:780px;
-  display:flex;align-items:stretch;
+  display:flex;flex-direction:column;align-items:stretch;
   border:1px solid var(--line-2);border-radius:12px;
   background:linear-gradient(180deg,#0e1318,#0a0e12);
   box-shadow:0 0 0 1px rgba(70,240,168,.04),0 20px 60px -20px rgba(0,0,0,.8);
   overflow:hidden;text-align:left;
   transition:border-color .25s,box-shadow .25s;
 }
+.install-body{display:flex;align-items:stretch}
+.install-body .panel{flex:1;min-width:0}
+.install .tabs{border-bottom:1px solid var(--line)}
+.panel[data-panel="prompt"] .install-cmd{white-space:normal;line-height:1.7}
 .install:hover{border-color:rgba(70,240,168,.4);box-shadow:0 0 0 1px rgba(70,240,168,.08),0 20px 60px -20px rgba(70,240,168,.18)}
 .install-cmd{
   flex:1;min-width:0;display:flex;align-items:center;gap:12px;
@@ -370,14 +374,25 @@ footer{padding:64px 0 48px;margin-top:120px;border-top:1px solid var(--line)}
     <div class="bg-glow" aria-hidden="true"></div>
     <div class="wrap">
       <span class="eyebrow reveal"><span class="pulse-dot"></span>开源 · 免费 · 一行命令即用</span>
-      <h1 class="reveal">为 <span class="grad">AI agent</span> 而生的<br>VPS 巡检工具</h1>
+      <h1 class="reveal">为 <span class="grad">AI Agent</span> 而生的<br>VPS 巡检工具</h1>
       <p class="lead reveal">本地一条命令，批量体检所有机器：IP 纯净度、流媒体 / AI 解锁、DNS 泄露、IPv6、延迟、测速——结果直接喂给 agent。</p>
 
       <div class="install reveal" data-copy>
-        <div class="install-cmd"><span class="prompt">$</span><code class="cmd-text">bash &lt;(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)</code></div>
-        <button class="copy-btn" type="button" aria-label="复制安装命令">
-          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>复制</span>
-        </button>
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="prompt">给 AI Agent 的一句话</button>
+          <button class="tab" role="tab" data-tab="bash">bash 安装</button>
+        </div>
+        <div class="install-body">
+          <div class="panel active" data-panel="prompt">
+            <div class="install-cmd"><code class="cmd-text">请从 GitHub 克隆 Genuifx/NetPulse，然后用 python3 netpulse.py --host root@&lt;你的VPS_IP&gt; --json 巡检这台 VPS，把结果转成中文总结发我</code></div>
+          </div>
+          <div class="panel" data-panel="bash">
+            <div class="install-cmd"><span class="prompt">$</span><code class="cmd-text">bash &lt;(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)</code></div>
+          </div>
+          <button class="copy-btn" type="button" aria-label="复制">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>复制</span>
+          </button>
+        </div>
       </div>
       <div class="hero-meta reveal">
         <span>单文件 Python</span><span>只依赖 requests</span><span>结构化 JSON 输出</span>
@@ -553,10 +568,21 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
       <h2>现在就给你的 VPS 做一次体检</h2>
       <p>复制命令，粘贴到终端，剩下的交给 NetPulse。</p>
       <div class="install" data-copy>
-        <div class="install-cmd"><span class="prompt">$</span><code class="cmd-text">bash &lt;(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)</code></div>
-        <button class="copy-btn" type="button" aria-label="复制安装命令">
-          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>复制</span>
-        </button>
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="prompt">给 AI Agent 的一句话</button>
+          <button class="tab" role="tab" data-tab="bash">bash 安装</button>
+        </div>
+        <div class="install-body">
+          <div class="panel active" data-panel="prompt">
+            <div class="install-cmd"><code class="cmd-text">请从 GitHub 克隆 Genuifx/NetPulse，然后用 python3 netpulse.py --host root@&lt;你的VPS_IP&gt; --json 巡检这台 VPS，把结果转成中文总结发我</code></div>
+          </div>
+          <div class="panel" data-panel="bash">
+            <div class="install-cmd"><span class="prompt">$</span><code class="cmd-text">bash &lt;(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)</code></div>
+          </div>
+          <button class="copy-btn" type="button" aria-label="复制">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>复制</span>
+          </button>
+        </div>
       </div>
     </div>
   </section>
@@ -568,7 +594,7 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
     <div class="foot">
       <div>
         <a href="#top" class="brand"><span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M4 17h6l3-8 5 15 3-7h7" fill="none" stroke="#46f0a8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>NetPulse</a>
-        <p>为 AI agent 而生的 VPS 巡检工具。开源，MIT 协议。</p>
+        <p>为 AI Agent 而生的 VPS 巡检工具。开源，MIT 协议。</p>
       </div>
       <div class="foot-links">
         <a href="#features">功能</a>
@@ -602,8 +628,10 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
     });
   }
   document.querySelectorAll('[data-copy]').forEach(function(box){
-    var btn=box.querySelector('.copy-btn'),label=btn.querySelector('span'),cmd=box.querySelector('.cmd-text').textContent;
+    var btn=box.querySelector('.copy-btn'),label=btn.querySelector('span');
     btn.addEventListener('click',function(){
+      var el=box.querySelector('.panel.active .cmd-text')||box.querySelector('.cmd-text'),
+          cmd=el.textContent;
       copyText(cmd).then(function(){
         btn.classList.add('done');label.textContent='已复制';
         setTimeout(function(){btn.classList.remove('done');label.textContent='复制'},1800);
@@ -611,12 +639,16 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
     });
   });
 
-  // 选项卡
-  var tabs=document.querySelectorAll('.tab'),panels=document.querySelectorAll('.panel');
-  tabs.forEach(function(t){
-    t.addEventListener('click',function(){
-      tabs.forEach(function(x){x.classList.toggle('active',x===t)});
-      panels.forEach(function(p){p.classList.toggle('active',p.dataset.panel===t.dataset.tab)});
+  // 选项卡（按容器作用域，避免互相干扰）
+  document.querySelectorAll('.tabs').forEach(function(bar){
+    var scope=bar.parentElement,
+        ts=bar.querySelectorAll('.tab'),
+        ps=scope.querySelectorAll('.panel');
+    ts.forEach(function(t){
+      t.addEventListener('click',function(){
+        ts.forEach(function(x){x.classList.toggle('active',x===t)});
+        ps.forEach(function(p){p.classList.toggle('active',p.dataset.panel===t.dataset.tab)});
+      });
     });
   });
 
@@ -643,7 +675,7 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
   var L=[
     '<span class="c-p">root@vps</span>:<span class="c-b">~</span># python3 netpulse.py --host root@vps-tokyo --host root@vps-sg',
     '',
-    '<span class="c-a">▍</span><span class="c-h">NetPulse</span> <span class="c-m">v0.3.0 · 为 AI agent 而生的 VPS 巡检工具</span>',
+    '<span class="c-a">▍</span><span class="c-h">NetPulse</span> <span class="c-m">v0.5.0 · 为 AI Agent 而生的 VPS 巡检工具</span>',
     '<span class="c-m">─────────────────────────────────────────────────────</span>',
     '<span class="c-b">[1/5]</span> <span class="c-h">IP 信息</span>  <span class="c-m">[root@vps-tokyo]</span>',
     '      IP          <span class="c-a">203.0.113.10</span>',
