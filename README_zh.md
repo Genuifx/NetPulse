@@ -12,7 +12,7 @@
 
 别的体检脚本要你一台台 SSH 上去跑。NetPulse 反过来——**你在本地发起，它去机器上执行，结果拿回本地**：
 
-- **本地发起**：`--host user@host` 经 SSH 把脚本送到远端执行，远端缺依赖自动装，你什么都不用管
+- **本地发起**：`--host user@host` 经 SSH 把脚本送到远端执行，远端需预装 `requests`（`pip install requests`）
 - **批量巡检**：`--host` 可重复指定，一次体检整个 fleet，自动输出多机对比表
 - **JSON 输出**：`--json` 机器可读，直接管道进 `jq` 或喂给 AI agent
 - **非交互**：无确认、无彩色（JSON 模式），失败给清晰错误 + 非零退出码，agent 不会卡住
@@ -35,7 +35,7 @@ git clone https://github.com/Genuifx/NetPulse.git && cd NetPulse
 python3 netpulse.py
 ```
 
-只依赖 `requests`（缺失时自动安装）。
+只依赖 `requests`。远端机器需预装：`pip install requests`。
 
 ## 检测项
 
@@ -77,7 +77,7 @@ JSON 为固定 envelope：`{schema, tool, version, generated_at, results[]}`，
 状态码只是初步判断（200 ≈ 可访问，403/451 ≈ 疑似区域限制）。Netflix 等建议用专项脚本二次确认，我们的定位是快速初筛。
 
 **`--host` 需要什么条件？**
-本地有 `ssh` 命令，远端有 `python3`，且配置了 SSH key 免密登录（`BatchMode=yes`，不支持交互输密码）。
+本地有 `ssh` 命令，远端有 `python3` + `requests`（`pip install requests`），且配置了 SSH key 免密登录（`BatchMode=yes`，不支持交互输密码）。
 
 **支持跳板机 / 特殊端口吗？**
 `--host` 就是普通 SSH，走你自己的 `~/.ssh/config` 即可。

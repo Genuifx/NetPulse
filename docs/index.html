@@ -458,7 +458,7 @@ footer{padding:64px 0 48px;margin-top:120px;border-top:1px solid var(--line)}
         <div class="agent-list">
           <div class="agent-item"><b>1</b><div><h4>本地发起，批量巡检</h4><p><span class="mono" style="font-size:13px">--host</span> 可重复指定，一次体检整个 fleet，多机自动输出对比表。</p></div></div>
           <div class="agent-item"><b>2</b><div><h4>非交互、可脚本化</h4><p>无确认、无彩色（JSON 模式），失败给清晰错误与非零退出码，agent 不会卡住。</p></div></div>
-          <div class="agent-item"><b>3</b><div><h4>远端零配置</h4><p>缺 requests 自动安装，远端只需有 python3 + SSH key 登录。</p></div></div>
+          <div class="agent-item"><b>3</b><div><h4>远端要求透明</h4><p>远端只需 python3 + requests（`pip install requests`）+ SSH key 登录，缺依赖时报错清晰，不静默改动远端环境。</p></div></div>
         </div>
       </div>
       <div class="code reveal">
@@ -517,7 +517,7 @@ unlocked = sum(<span class="n">1</span> <span class="k">for</span> v <span class
       <div class="faq reveal">
         <details>
           <summary>NetPulse 支持哪些系统？<span class="pm"></span></summary>
-          <div class="ans">有 Python 3 就行：主流 Linux 发行版和 macOS。单文件，只依赖 requests（缺失时自动安装）。</div>
+          <div class="ans">有 Python 3 就行：主流 Linux 发行版和 macOS。单文件，只依赖 requests（远端需预装：`pip install requests`）。</div>
         </details>
         <details>
           <summary>运行一次需要多长时间？<span class="pm"></span></summary>

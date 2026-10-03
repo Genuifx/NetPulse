@@ -12,7 +12,7 @@
 
 Other checkup scripts make you SSH into each box and run them. NetPulse flips it — **you launch from your laptop, it executes on the remote box, results come back to you**:
 
-- **Launch locally**: `--host user@host` ships the script over SSH and runs it remotely; missing deps auto-install, zero manual steps on the remote
+- **Launch locally**: `--host user@host` ships the script over SSH and runs it remotely (remote needs `requests` pre-installed: `pip install requests`)
 - **Fleet inspection**: repeat `--host` to check your whole fleet at once, with a multi-host comparison table
 - **JSON output**: `--json` is machine-readable — pipe into `jq` or feed to an AI agent
 - **Non-interactive**: no prompts, no color in JSON mode, clear errors + non-zero exit codes so agents never hang
@@ -35,7 +35,7 @@ git clone https://github.com/Genuifx/NetPulse.git && cd NetPulse
 python3 netpulse.py
 ```
 
-Only dependency is `requests` (auto-installed when missing).
+Only dependency is `requests` (pre-install on remote hosts: `pip install requests`).
 
 ## What it checks
 
@@ -79,7 +79,7 @@ Markdown report.
 HTTP status only — a first pass (200 ≈ reachable, 403/451 ≈ likely geo-blocked). Use a dedicated script to double-check Netflix etc. We're the quick triage, not the final word.
 
 **What does `--host` need?**
-An `ssh` binary locally, `python3` on the remote, and key-based auth (`BatchMode=yes` — no interactive password prompts).
+An `ssh` binary locally, `python3` + `requests` (`pip install requests`) on the remote, and key-based auth (`BatchMode=yes` — no interactive password prompts).
 
 **Jump hosts / custom ports?**
 `--host` is plain SSH — your `~/.ssh/config` applies as usual.

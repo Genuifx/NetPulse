@@ -34,7 +34,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 SCHEMA = 1
 
 # ---------- 依赖懒加载：import 失败不退出，保证 --help 可用 ----------
@@ -67,6 +67,7 @@ def ok(t): return p("✓ " + t, C.GREEN)
 def neg(t): return p("✗ " + t, C.RED)
 def unk(t): return p("? " + t, C.YELLOW)
 def err(t): return p("! " + t, C.RED)
+def warn(t): return p("! " + t, C.YELLOW)
 def info(t): return p("→ " + t, C.CYAN)
 def skip(t): return p("– " + t, C.DIM)
 
@@ -189,7 +190,7 @@ def check_dns(session, country):
                            evidence={"resolver_ip": rip, "resolver_geo": rgeo},
                            error="任一侧属地未知，无法判断")
             leak = not rgeo.startswith(country)
-            return _mk("ok", value="存在泄露" if leak else "无泄露",
+            return _mk("ok", value="属地不一致（观察）" if leak else "无异常",
                        evidence={"resolver_ip": rip, "resolver_geo": rgeo,
                                  "leak": leak})
         except Exception:
@@ -268,6 +269,20 @@ def _probe_one(session, item):
     return name, _classify_page(r)
 
 
+def _agg(children):
+    """容器项状态由子项推导：不能永远报 ok，否则"全部失败"永远触发不了。"""
+    sts = [c.get("status") for c in children.values()]
+    if not sts:
+        return "error"
+    if all(s == "error" for s in sts):
+        return "error"
+    if all(s == "skipped" for s in sts):
+        return "skipped"
+    if all(s in ("error", "unknown", "skipped") for s in sts):
+        return "unknown"
+    return "ok"
+
+
 @check
 def check_unlock(session):
     miss = _need_requests()
@@ -277,7 +292,7 @@ def check_unlock(session):
     with futures.ThreadPoolExecutor(max_workers=8) as ex:
         for name, chk in ex.map(lambda it: _probe_one(session, it), TARGETS):
             results[name] = chk
-    return _mk("ok", value=results)
+    return _mk(_agg(results), value=results)
 
 
 @check
@@ -329,7 +344,7 @@ def check_latency():
                                  evidence={"samples": [round(x) for x in samples]})
         else:
             results[label] = _mk("error", error="连接失败")
-    return _mk("ok", value=results)
+    return _mk(_agg(results), value=results)
 
 
 SPEED_URLS = [
@@ -373,7 +388,7 @@ def check_speed(session):
     results = {}
     for name, url in SPEED_URLS:  # 串行：并发会互相抢带宽
         results[name] = _speed_one(session, name, url)
-    return _mk("ok", value=results)
+    return _mk(_agg(results), value=results)
 
 
 # ================= 汇总（只基于有证据的项） =================
@@ -394,10 +409,11 @@ def build_summary(checks):
         elif "机房" in label:
             tips.append("机房 IP：适合建站/做节点；注册风控严的平台账号时多加小心。")
         elif "未被标记" in label:
-            tips.append("IP 未被标记为机房/代理，相对干净，适合账号类、出海业务。")
+            tips.append("IP 未被标记为机房/代理，初步判断相对干净；单数据源结论，仅供参考。")
     dns = checks.get("dns") or {}
     if dns.get("status") == "ok" and (dns.get("evidence") or {}).get("leak"):
-        tips.append(f"DNS 疑似泄露：解析出口属地（{dns['evidence'].get('resolver_geo')}）与 IP 属地不一致。")
+        tips.append(f"DNS 解析器属地（{dns['evidence'].get('resolver_geo')}）与 IP 属地不一致 "
+                    f"（观察项：VPS 上 anycast 解析器常见，不直接等同于泄露）。")
 
     unlock = (checks.get("unlock") or {}).get("value") or {}
     streaming = {k: v for k, v in unlock.items() if k not in AI_NAMES}
@@ -405,7 +421,7 @@ def build_summary(checks):
     s_ok = [k for k, v in streaming.items() if v.get("status") == "ok"]
     s_measured = [k for k, v in streaming.items() if v.get("status") in ("ok", "negative")]
     if s_measured:
-        tips.append(f"流媒体 {len(s_ok)}/{len(s_measured)} 确认可达"
+        tips.append(f"流媒体 {len(s_ok)}/{len(s_measured)} 初步可达"
                     + ("" if len(s_ok) == len(s_measured) else "，其余疑似区域限制"))
     a_ok = [k for k, v in ai.items() if v.get("status") == "ok"]
     a_neg = [k for k, v in ai.items() if v.get("status") == "negative"]
@@ -425,7 +441,10 @@ def build_summary(checks):
     lat_ok = [(k, v["value"]) for k, v in lat.items() if v.get("status") == "ok"]
     if lat_ok:
         best = min(lat_ok, key=lambda x: x[1])
-        tips.append(f"延迟最低为{best[0]} {best[1]}ms，网络响应良好。")
+        if best[1] < 150:
+            tips.append(f"延迟最低为{best[0]} {best[1]}ms，网络响应良好。")
+        else:
+            tips.append(f"延迟最低为{best[0]} {best[1]}ms。")
     return tips
 
 
@@ -490,9 +509,10 @@ def _host_error(host, code, message):
             "error": message, "duration_ms": 0, "checks": {}, "summary": []}
 
 
-def run_remote(host, timeout=300):
+def run_remote(host, timeout=300, no_speed=False):
     """经 SSH 把本脚本喂给远端 python3 执行，取回 JSON envelope。
-    任何异常都转成 error 结果，不抛异常（批量隔离）。"""
+    任何异常都转成 error 结果，不抛异常（批量隔离）。
+    --no-speed / --timeout 会透传给远端（timeout 扣掉 SSH 开销余量）。"""
     t0 = time.perf_counter()
     if host.startswith("-"):
         return _host_error(host, "bad_host", "主机名不能以 - 开头")
@@ -501,10 +521,14 @@ def run_remote(host, timeout=300):
             script = f.read()
     except OSError as e:
         return _host_error(host, "local_error", f"无法读取本脚本：{e}")
+    remote = ["python3", "-", "--json", "--no-color"]
+    if no_speed:
+        remote.append("--no-speed")
+    remote += ["--timeout", str(max(15, timeout - 20))]
     # "--" 结束 ssh 选项，防止 --host '-oProxyCommand=...' 注入本地命令执行
     cmd = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
            "-o", "StrictHostKeyChecking=accept-new",
-           "--", host, "python3 - --json --no-color"]
+           "--", host, " ".join(remote)]
     try:
         pr = subprocess.run(cmd, input=script, capture_output=True,
                             timeout=timeout)
@@ -512,6 +536,17 @@ def run_remote(host, timeout=300):
         return _host_error(host, "no_ssh", "未找到 ssh 命令，无法使用 --host")
     except subprocess.TimeoutExpired:
         return _host_error(host, "timeout", f"SSH 执行超时（{timeout}s）：{host}")
+    # 先尝试解析 stdout：远端可能已输出合法 envelope 只是非零退出
+    #（例如远端全部检测失败 exit 2），结果不应被丢掉
+    try:
+        data = json.loads(pr.stdout.decode())
+    except Exception:
+        data = None
+    if isinstance(data, dict) and "results" in data and data.get("results"):
+        r = data["results"][0]
+        r["host"] = host
+        r["duration_ms"] = int((time.perf_counter() - t0) * 1000)
+        return r
     if pr.returncode != 0:
         err = pr.stderr.decode(errors="replace").strip().splitlines()
         tail = err[-1] if err else f"exit {pr.returncode}"
@@ -520,27 +555,11 @@ def run_remote(host, timeout=300):
             if pat.search(tail):
                 code = c
                 break
-        if "requests" in tail and "pip" in tail:
-            code = "no_python_deps"
         return _host_error(host, code,
                            f"远端执行失败 [{code}]：{tail} "
-                           f"（远端需要 python3；缺 requests 时会自动尝试 pip 安装，"
-                           f"PEP 668 系统上可能失败，请手动安装）")
-    try:
-        data = json.loads(pr.stdout.decode())
-    except Exception:
-        return _host_error(host, "bad_output",
-                           "远端返回的不是合法 JSON（远端 python3 可能不可用）")
-    if not isinstance(data, dict) or "results" not in data:
-        return _host_error(host, "bad_output",
-                           "远端返回结构异常（非 NetPulse envelope）")
-    results = data.get("results") or []
-    if not results:
-        return _host_error(host, "bad_output", "远端返回空结果")
-    r = results[0]
-    r["host"] = host
-    r["duration_ms"] = int((time.perf_counter() - t0) * 1000)
-    return r
+                           f"（远端需要 python3 + requests，可手动 pip install requests）")
+    return _host_error(host, "bad_output",
+                       "远端返回的不是合法 JSON（远端 python3 可能不可用）")
 
 
 # ================= 输出渲染 =================
@@ -593,7 +612,7 @@ def render_terminal(result):
     dev = dns.get("evidence") or {}
     if dns.get("status") == "ok":
         leak = dev.get("leak")
-        line = (warn(f"疑似泄露：{dev.get('resolver_ip')}（{dev.get('resolver_geo')}）")
+        line = (warn(f"属地不一致（观察）：{dev.get('resolver_ip')}（{dev.get('resolver_geo')}）")
                 if leak else ok(f"无异常：{dev.get('resolver_ip')}（{dev.get('resolver_geo')}）"))
         print("    " + line)
     else:
@@ -752,7 +771,8 @@ def main():
 
     if a.host:
         with futures.ThreadPoolExecutor(max_workers=min(8, len(a.host))) as ex:
-            futs = {ex.submit(run_remote, h, a.timeout): h for h in a.host}
+            futs = {ex.submit(run_remote, h, a.timeout, a.no_speed): h
+                    for h in a.host}
             tmp = []
             for f in futures.as_completed(futs):
                 h = futs[f]

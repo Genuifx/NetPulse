@@ -120,5 +120,45 @@ p3 = subprocess.run([sys.executable, "netpulse.py", "--help"],
                     capture_output=True, text=True, timeout=30)
 t("--help 正常工作", p3.returncode == 0 and "--host" in p3.stdout)
 
+print("== 容器状态聚合：子项全失败不再报 ok ==")
+def child(st):
+    return {"status": st, "value": None, "evidence": {}, "error": None, "duration_ms": 1}
+t("全 error → error", np._agg({"a": child("error"), "b": child("error")}) == "error")
+t("全 skipped → skipped", np._agg({"a": child("skipped")}) == "skipped")
+t("混合 ok/error → ok", np._agg({"a": child("ok"), "b": child("error")}) == "ok")
+t("全 unknown → unknown", np._agg({"a": child("unknown")}) == "unknown")
+
+print("== 终端渲染冒烟（回归 warn 未定义 crash）==")
+np.NO_COLOR = True
+fake_checks = {
+    "ip": {"status": "ok",
+            "value": {"query": "203.0.113.10", "country": "Japan", "city": "Tokyo",
+                      "timezone": "Asia/Tokyo", "as": "AS16509", "isp": "Example"},
+            "evidence": {}, "error": None, "duration_ms": 1},
+    "purity": {"status": "ok", "value": "机房 IP（数据中心）", "evidence": {}, "error": None, "duration_ms": 0},
+    "dns": {"status": "ok", "value": "属地不一致（观察）",
+            "evidence": {"resolver_ip": "8.8.8.8", "resolver_geo": "United States", "leak": True},
+            "error": None, "duration_ms": 1},
+    "unlock": {"status": "ok", "value": {
+        "Netflix": child("ok"), "ChatGPT": child("unknown"), "Claude": child("negative"),
+    }, "evidence": {}, "error": None, "duration_ms": 1},
+    "ipv6": {"status": "unknown", "value": "无结论", "evidence": {}, "error": "探测失败", "duration_ms": 1},
+    "latency": {"status": "ok", "value": {"Cloudflare": dict(child("ok"), value=12)},
+                "evidence": {}, "error": None, "duration_ms": 1},
+    "speed": {"status": "skipped", "value": None, "evidence": {}, "error": "--no-speed", "duration_ms": 0},
+}
+fake = {"host": "root@test", "status": "ok", "error_code": None, "error": None,
+        "duration_ms": 1, "checks": fake_checks, "summary": ["机房 IP：适合建站/做节点。"]}
+import io
+from contextlib import redirect_stdout
+try:
+    with redirect_stdout(io.StringIO()):
+        np.render_terminal(fake)
+        np.render_compare([fake, dict(fake, host="root@test2")])
+        md = np.render_share_md([fake], "0.4.1")
+    t("render_terminal/render_compare/render_share_md 不崩", "203.0.113.10" in md)
+except Exception as e:
+    t(f"render_terminal/render_compare 不崩（{type(e).__name__}: {e}）", False)
+
 print(f"\n{passed} 通过，{failed} 失败")
 sys.exit(1 if failed else 0)

@@ -19,7 +19,8 @@ and results return as JSON. Non-interactive, machine-readable, clear exit codes.
 bash <(curl -sL https://raw.githubusercontent.com/Genuifx/NetPulse/main/install.sh)
 ```
 
-Only dependency: `requests` (auto-installed when missing, including on remote hosts).
+Only dependency: `requests` (install lazily — checks report error when missing;
+pre-install on remote hosts with `pip install requests`).
 
 ## Usage
 
